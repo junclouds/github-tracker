@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from github import Github
@@ -34,38 +34,53 @@ class RepoActivityTracker:
             print(f"配置文件格式错误: {self.config_file}")
             return []
             
-    def get_repo_activities(self, repo_full_name: str) -> Dict[str, Any]:
+    def get_repo_activities(self, repo_full_name: str, days: int = 7) -> Dict[str, Any]:
         """获取仓库的最新活动"""
         try:
+            print(f"\n=== 开始获取 {repo_full_name} 的活动 ===")
+            print(f"获取近 {days} 天的活动")
+            
             repo = self.github.get_repo(repo_full_name)
-            since_date = datetime.now() - timedelta(days=1)
+            recent_time = datetime.now(timezone.utc) - timedelta(days=days)
+            print(f"时间范围: {recent_time.isoformat()} -> {datetime.now(timezone.utc).isoformat()}")
             
             # 获取最近的提交
+            print("\n正在获取提交...")
             commits = []
-            for commit in repo.get_commits(since=since_date):
-                commits.append({
-                    "sha": commit.sha,
-                    "message": commit.commit.message,
-                    "author": commit.commit.author.name,
-                    "date": commit.commit.author.date.isoformat(),
-                    "url": commit.html_url
-                })
+            for commit in repo.get_commits(since=recent_time):
+                commit_date = commit.commit.author.date.replace(tzinfo=timezone.utc)
+                print(f"找到提交: {commit.sha[:7]} - {commit_date.isoformat()} - {commit.commit.message.splitlines()[0]}")
+                if commit_date > recent_time:
+                    commits.append({
+                        "sha": commit.sha,
+                        "message": commit.commit.message,
+                        "author": commit.commit.author.name,
+                        "date": commit.commit.author.date.isoformat(),
+                        "url": commit.html_url
+                    })
+            print(f"共获取到 {len(commits)} 个提交")
             
             # 获取最近的发布
+            print("\n正在获取发布...")
             releases = []
             for release in repo.get_releases():
-                if release.published_at and release.published_at > since_date:
-                    releases.append({
-                        "tag": release.tag_name,
-                        "name": release.title,
-                        "body": release.body,
-                        "date": release.published_at.isoformat(),
-                        "url": release.html_url
-                    })
+                if release.published_at:
+                    print(f"找到发布: {release.tag_name} - {release.published_at.isoformat()}")
+                    if release.published_at > recent_time:
+                        releases.append({
+                            "tag": release.tag_name,
+                            "name": release.title,
+                            "body": release.body,
+                            "date": release.published_at.isoformat(),
+                            "url": release.html_url
+                        })
+            print(f"共获取到 {len(releases)} 个发布")
             
             # 获取最近的议题
+            print("\n正在获取议题...")
             issues = []
-            for issue in repo.get_issues(state='all', since=since_date):
+            for issue in repo.get_issues(state='all', since=recent_time):
+                print(f"找到议题: #{issue.number} - 更新于 {issue.updated_at.isoformat()} - {issue.title}")
                 issues.append({
                     "number": issue.number,
                     "title": issue.title,
@@ -74,11 +89,14 @@ class RepoActivityTracker:
                     "updated_at": issue.updated_at.isoformat(),
                     "url": issue.html_url
                 })
+            print(f"共获取到 {len(issues)} 个议题")
             
-            # 获取最近的PR
+            # 获取最近的 PR
+            print("\n正在获取 PR...")
             pull_requests = []
             for pr in repo.get_pulls(state='all', sort='updated', direction='desc'):
-                if pr.updated_at > since_date:
+                if pr.updated_at > recent_time:
+                    print(f"找到 PR: #{pr.number} - 更新于 {pr.updated_at.isoformat()} - {pr.title}")
                     pull_requests.append({
                         "number": pr.number,
                         "title": pr.title,
@@ -87,8 +105,12 @@ class RepoActivityTracker:
                         "updated_at": pr.updated_at.isoformat(),
                         "url": pr.html_url
                     })
+                else:
+                    print(f"PR #{pr.number} 更新时间 {pr.updated_at.isoformat()} 超出范围，停止获取")
+                    break
+            print(f"共获取到 {len(pull_requests)} 个 PR")
             
-            return {
+            result = {
                 "repository": repo_full_name,
                 "timestamp": datetime.now().isoformat(),
                 "activities": {
@@ -104,8 +126,13 @@ class RepoActivityTracker:
                     }
                 }
             }
+            
+            print("\n=== 活动获取完成 ===")
+            print(f"总计: {len(commits)} 提交, {len(releases)} 发布, {len(issues)} 议题, {len(pull_requests)} PR")
+            return result
+            
         except Exception as e:
-            print(f"获取仓库 {repo_full_name} 活动时出错: {str(e)}")
+            print(f"\n获取仓库 {repo_full_name} 活动时出错: {str(e)}")
             return {}
             
     def save_activities(self, activities: Dict[str, Any]) -> Optional[Path]:
@@ -169,15 +196,19 @@ class RepoActivityTracker:
                 print(f"- #{pr['number']} {pr['title']}")
                 print(f"  状态: {pr['state']}, 更新时间: {pr['updated_at']}")
                 
-    def track_all_repos(self) -> None:
-        """追踪所有配置的仓库"""
+    def track_all_repos(self, days: int = 7) -> None:
+        """追踪所有配置的仓库
+        
+        Args:
+            days: 获取最近几天的活动，默认为 7 天
+        """
         if not self.tracked_repos:
             print("没有配置要追踪的仓库")
             return
             
         for repo in self.tracked_repos:
             print(f"\n正在获取 {repo['full_name']} 的活动...")
-            activities = self.get_repo_activities(repo['full_name'])
+            activities = self.get_repo_activities(repo['full_name'], days)
             
             if activities:
                 filename = self.save_activities(activities)
@@ -215,4 +246,4 @@ class RepoActivityTracker:
         tracker.track_all_repos()
 
 if __name__ == "__main__":
-    RepoActivityTracker.main() 
+    RepoActivityTracker.main()

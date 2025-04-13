@@ -2,6 +2,12 @@
   "repositories": [
     {
       "full_name": "SakanaAI/AI-Scientist-v2"
+    },
+    {
+      "full_name": "langchain-ai/langchain"
+    },
+    {
+      "full_name": "langchain-ai/langgraph"
     }
   ]
 }

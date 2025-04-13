@@ -25,10 +25,11 @@ import {
   ListItem,
   ListItemText,
   Divider,
-  TextField
+  TextField,
+  MenuItem
 } from '@mui/material'
 import { QueryClient, QueryClientProvider, useQuery, useMutation } from '@tanstack/react-query'
-import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo, refreshActivities } from './api/github'
+import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo, refreshActivities, refreshRepoActivities } from './api/github'
 import { Repo, TrackedRepo } from './types'
 
 const queryClient = new QueryClient()
@@ -69,6 +70,8 @@ function MainContent() {
   const [activityDialogOpen, setActivityDialogOpen] = useState(false)
   const [loadingActivities, setLoadingActivities] = useState(false)
   const [newRepoFullName, setNewRepoFullName] = useState('')
+  const [refreshDays, setRefreshDays] = useState<number>(7);
+  const [refreshingRepos, setRefreshingRepos] = useState<Set<string>>(new Set());
 
   // 热门仓库查询
   const { 
@@ -167,9 +170,9 @@ function MainContent() {
   const handleRefreshActivities = async () => {
     setLoadingActivities(true)
     try {
-      await refreshActivities();
+      await refreshActivities(refreshDays);
       refetchTrackedRepos();
-      setMessage('活动已刷新！');
+      setMessage(`已刷新近 ${refreshDays} 天的活动！`);
     } catch (error) {
       console.error('刷新活动时出错:', error);
       setMessage('刷新失败，请重试');
@@ -195,28 +198,30 @@ function MainContent() {
     }
   };
 
+  const handleRefreshRepoActivities = async (repoFullName: string) => {
+    setRefreshingRepos(prev => new Set(prev).add(repoFullName));
+    try {
+      await refreshRepoActivities(repoFullName, refreshDays);
+      await refetchTrackedRepos();
+      setMessage(`已刷新 ${repoFullName} 近 ${refreshDays} 天的活动！`);
+    } catch (error) {
+      console.error('刷新仓库活动时出错:', error);
+      setMessage(`刷新 ${repoFullName} 失败，请重试`);
+    } finally {
+      setRefreshingRepos(prev => {
+        const next = new Set(prev);
+        next.delete(repoFullName);
+        return next;
+      });
+    }
+  };
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom>
           GitHub 项目追踪器
         </Typography>
-
-        <Box sx={{ display: 'flex', mb: 2 }}>
-          <TextField
-            label="输入项目全名 (例如: owner/repo)"
-            variant="outlined"
-            value={newRepoFullName}
-            onChange={(e) => setNewRepoFullName(e.target.value)}
-            sx={{ flexGrow: 1, mr: 1 }}
-          />
-          <Button 
-            variant="contained" 
-            onClick={handleAddRepo} 
-          >
-            添加项目
-          </Button>
-        </Box>
         
         <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
           <Tabs value={tabValue} onChange={handleTabChange} aria-label="项目追踪标签页">
@@ -303,14 +308,49 @@ function MainContent() {
             已跟踪项目列表
           </Typography>
 
-          <Button 
-            variant="contained" 
-            onClick={handleRefreshActivities} 
-            sx={{ mb: 2 }}
-            disabled={loadingActivities}
-          >
-            {loadingActivities ? <CircularProgress size={24} color="inherit" /> : '刷新活动'}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+            {/* 添加项目输入框 */}
+            <TextField
+              label="输入项目全名 (例如: owner/repo)"
+              variant="outlined"
+              value={newRepoFullName}
+              onChange={(e) => setNewRepoFullName(e.target.value)}
+              sx={{ flexGrow: 1 }}
+            />
+            <Button 
+              variant="contained" 
+              onClick={handleAddRepo}
+              disabled={!newRepoFullName}
+            >
+              添加项目
+            </Button>
+            
+            {/* 时间范围选择 */}
+            <TextField
+              select
+              label="刷新时间范围"
+              value={refreshDays}
+              onChange={(e) => setRefreshDays(Number(e.target.value))}
+              sx={{ width: 150 }}
+            >
+              <MenuItem value={1}>近1天</MenuItem>
+              <MenuItem value={7}>近1周</MenuItem>
+              <MenuItem value={30}>近1月</MenuItem>
+              <MenuItem value={90}>近3月</MenuItem>
+            </TextField>
+            
+            {/* 刷新活动按钮 */}
+            <Button 
+              variant="outlined" 
+              onClick={handleRefreshActivities} 
+              disabled={loadingActivities}
+            >
+              {loadingActivities ? 
+                <CircularProgress size={24} color="inherit" /> : 
+                `刷新近${refreshDays}天活动`
+              }
+            </Button>
+          </Box>
 
           {isLoadingTrackedRepos ? (
             <Box sx={{ p: 3, textAlign: 'center' }}>
@@ -347,8 +387,18 @@ function MainContent() {
                       </TableCell>
                       <TableCell>
                         {repo.has_updates ? (
-                          <Alert severity="info" sx={{ py: 0 }}>有新动态</Alert>
-                        ) : '无更新'}
+                          <Alert severity="info" sx={{ py: 0 }}>
+                            最近 {refreshDays} 天内有更新
+                            {/* 可以添加具体更新时间 */}
+                            <Typography variant="caption" display="block">
+                              最新提交: {new Date(repo.activities[0]?.created_at).toLocaleString()}
+                            </Typography>
+                          </Alert>
+                        ) : (
+                          <Typography color="text.secondary">
+                            无更新 (已检查近 {refreshDays} 天)
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -359,6 +409,19 @@ function MainContent() {
                             onClick={() => handleShowActivities(repo)}
                           >
                             查看动态
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            color="info"
+                            onClick={() => handleRefreshRepoActivities(repo.full_name)}
+                            disabled={refreshingRepos.has(repo.full_name)}
+                          >
+                            {refreshingRepos.has(repo.full_name) ? (
+                              <CircularProgress size={20} color="inherit" />
+                            ) : (
+                              `刷新`
+                            )}
                           </Button>
                           <Button 
                             variant="outlined" 

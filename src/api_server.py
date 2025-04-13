@@ -248,6 +248,43 @@ async def refresh_activities():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/activities/refresh")
+async def refresh_activities(days: int = 7):  # 添加 days 参数，默认值为 7
+    """刷新所有追踪仓库的活动
+    
+    Args:
+        days: 获取最近几天的活动，默认为 7 天
+    """
+    try:
+        # 更新 RepoActivityTracker 中的 get_repo_activities 方法调用
+        repo_tracker.track_all_repos(days=days)  # 传递 days 参数
+        return {"message": f"Activities refreshed successfully for last {days} days"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/activities/refresh/{owner}/{repo}")  # 修改路由，分开处理 owner 和 repo
+async def refresh_repo_activities(owner: str, repo: str, days: int = 7):
+    """刷新指定仓库的活动
+    
+    Args:
+        owner: 仓库所有者
+        repo: 仓库名称
+        days: 获取最近几天的活动，默认为 7 天
+    """
+    try:
+        repo_full_name = f"{owner}/{repo}"
+        activities = repo_tracker.get_repo_activities(repo_full_name, days)
+        if activities:
+            repo_tracker.save_activities(activities)
+            return {"message": f"Activities refreshed successfully for {repo_full_name}"}
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Failed to get activities for repository {repo_full_name}"
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # 添加定时任务
 scheduler = BackgroundScheduler()
 
@@ -263,4 +300,4 @@ scheduler.start()
 # 应用关闭时关闭定时任务
 @app.on_event("shutdown")
 def shutdown_scheduler():
-    scheduler.shutdown() 
+    scheduler.shutdown()
