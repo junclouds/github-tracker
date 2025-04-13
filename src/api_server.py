@@ -8,7 +8,9 @@ from .repo_activity_tracker import RepoActivityTracker
 import json
 from typing import List, Dict, Any
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # 加载环境变量
 load_dotenv()
@@ -76,7 +78,103 @@ async def get_tracked_repos() -> List[Dict[str, Any]]:
             
         with open(config_file, 'r', encoding='utf-8') as f:
             config = json.load(f)
-            return config.get('repositories', [])
+            
+        # 获取每个仓库的最新活动
+        tracked_repos = []
+        activity_dir = base_dir / "data" / "repo_activities"
+        
+        for repo in config.get('repositories', []):
+            repo_full_name = repo['full_name']
+            # 查找该仓库的最新活动文件
+            repo_files = list(activity_dir.glob(f"{repo_full_name.replace('/', '_')}*.json"))
+            repo_files.sort(reverse=True)  # 最新的文件排在前面
+            
+            repo_data = {
+                "full_name": repo_full_name,
+                "name": repo_full_name.split("/")[-1],
+                "description": "",
+                "stars": 0,
+                "forks": 0,
+                "updated_at": "",
+                "has_updates": False,
+                "last_updated": "",
+                "activities": []
+            }
+            
+            if repo_files:
+                try:
+                    with open(repo_files[0], 'r', encoding='utf-8') as f:
+                        activity_data = json.load(f)
+                        
+                    # 更新仓库信息
+                    repo_data["last_updated"] = activity_data.get("timestamp", "")
+                    
+                    # 检查是否有未读更新（最近一天内的活动）
+                    recent_time = datetime.now() - timedelta(days=1)
+                    
+                    # 处理提交
+                    activities = []
+                    for commit in activity_data.get("activities", {}).get("commits", []):
+                        commit_date = datetime.fromisoformat(commit["date"].replace("Z", "+00:00"))
+                        activities.append({
+                            "type": "Commit",
+                            "title": commit["message"].split("\n")[0],
+                            "created_at": commit["date"],
+                            "description": f"作者: {commit['author']}",
+                            "url": commit.get("url", "")
+                        })
+                        if commit_date > recent_time:
+                            repo_data["has_updates"] = True
+                    
+                    # 处理议题
+                    for issue in activity_data.get("activities", {}).get("issues", []):
+                        issue_date = datetime.fromisoformat(issue["updated_at"].replace("Z", "+00:00"))
+                        activities.append({
+                            "type": "Issue",
+                            "title": issue["title"],
+                            "created_at": issue["updated_at"],
+                            "description": f"状态: {issue['state']}",
+                            "url": issue.get("url", "")
+                        })
+                        if issue_date > recent_time:
+                            repo_data["has_updates"] = True
+                    
+                    # 处理PR
+                    for pr in activity_data.get("activities", {}).get("pull_requests", []):
+                        pr_date = datetime.fromisoformat(pr["updated_at"].replace("Z", "+00:00"))
+                        activities.append({
+                            "type": "Pull Request",
+                            "title": pr["title"],
+                            "created_at": pr["updated_at"],
+                            "description": f"状态: {pr['state']}",
+                            "url": pr.get("url", "")
+                        })
+                        if pr_date > recent_time:
+                            repo_data["has_updates"] = True
+                    
+                    # 处理发布
+                    for release in activity_data.get("activities", {}).get("releases", []):
+                        release_date = datetime.fromisoformat(release["date"].replace("Z", "+00:00"))
+                        activities.append({
+                            "type": "Release",
+                            "title": release["name"],
+                            "created_at": release["date"],
+                            "description": f"标签: {release['tag']}",
+                            "url": release.get("url", "")
+                        })
+                        if release_date > recent_time:
+                            repo_data["has_updates"] = True
+                    
+                    # 按时间排序，最新的在前
+                    activities.sort(key=lambda x: x["created_at"], reverse=True)
+                    repo_data["activities"] = activities
+                    
+                except Exception as e:
+                    print(f"处理仓库 {repo_full_name} 活动数据时出错: {str(e)}")
+            
+            tracked_repos.append(repo_data)
+            
+        return tracked_repos
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -148,4 +246,21 @@ async def refresh_activities():
         repo_tracker.track_all_repos()
         return {"message": "Activities refreshed successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 添加定时任务
+scheduler = BackgroundScheduler()
+
+# 每天凌晨3点自动获取仓库动态
+@scheduler.scheduled_job(CronTrigger(hour=3))
+def scheduled_refresh():
+    print("执行定时任务: 自动获取仓库动态")
+    repo_tracker.track_all_repos()
+
+# 启动定时任务
+scheduler.start()
+
+# 应用关闭时关闭定时任务
+@app.on_event("shutdown")
+def shutdown_scheduler():
+    scheduler.shutdown() 
