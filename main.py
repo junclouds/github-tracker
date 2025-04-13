@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from src.github_tracker import GitHubTracker
 from src.scheduler import ScheduleManager
 
 def main():
@@ -17,11 +16,8 @@ def main():
     if not token:
         raise ValueError("请设置 GITHUB_TOKEN 环境变量")
         
-    # 创建 GitHub 追踪器
-    tracker = GitHubTracker(token, base_dir)
-    
     # 创建并运行定时任务管理器
-    scheduler = ScheduleManager(tracker)
+    scheduler = ScheduleManager(token, base_dir)
     scheduler.setup_schedule()
     scheduler.run()
 
