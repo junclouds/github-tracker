@@ -35,7 +35,7 @@ GitHub 项目追踪器，用于监控热门项目和关注项目的最新动态�
 
 1. 克隆项目
 ```bash
-git clone https://github.com/your-username/github-tracker.git
+git clone https://github.com/junclouds/github-tracker.git
 cd github-tracker
 ```
 
