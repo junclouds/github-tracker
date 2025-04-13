@@ -27,7 +27,7 @@ import {
   Divider
 } from '@mui/material'
 import { QueryClient, QueryClientProvider, useQuery, useMutation } from '@tanstack/react-query'
-import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo } from './api/github'
+import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo, refreshActivities } from './api/github'
 import { Repo, TrackedRepo } from './types'
 
 const queryClient = new QueryClient()
@@ -66,6 +66,7 @@ function MainContent() {
   const [tabValue, setTabValue] = useState(0)
   const [selectedRepo, setSelectedRepo] = useState<TrackedRepo | null>(null)
   const [activityDialogOpen, setActivityDialogOpen] = useState(false)
+  const [loadingActivities, setLoadingActivities] = useState(false)
 
   // 热门仓库查询
   const { 
@@ -160,6 +161,21 @@ function MainContent() {
     return trackedRepos.filter(repo => repo.has_updates).length
   }
 
+  // 更新活动的处理函数
+  const handleRefreshActivities = async () => {
+    setLoadingActivities(true)
+    try {
+      await refreshActivities();
+      refetchTrackedRepos();
+      setMessage('活动已刷新！');
+    } catch (error) {
+      console.error('刷新活动时出错:', error);
+      setMessage('刷新失败，请重试');
+    } finally {
+      setLoadingActivities(false)
+    }
+  };
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
@@ -251,6 +267,15 @@ function MainContent() {
           <Typography variant="h6" gutterBottom>
             已跟踪项目列表
           </Typography>
+
+          <Button 
+            variant="contained" 
+            onClick={handleRefreshActivities} 
+            sx={{ mb: 2 }}
+            disabled={loadingActivities}
+          >
+            {loadingActivities ? <CircularProgress size={24} color="inherit" /> : '刷新活动'}
+          </Button>
 
           {isLoadingTrackedRepos ? (
             <Box sx={{ p: 3, textAlign: 'center' }}>

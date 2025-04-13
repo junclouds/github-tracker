@@ -1,13 +1,6 @@
 {
   "repositories": [
     {
-      "full_name": "test-time-training/ttt-video-dit",
-      "description": "Official PyTorch implementation of One-Minute Video Generation with Test-Time Training"
-    },
-    {
-      "full_name": "OmniSVG/OmniSVG"
-    },
-    {
       "full_name": "SakanaAI/AI-Scientist-v2"
     }
   ]
