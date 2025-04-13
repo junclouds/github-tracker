@@ -1,90 +1,112 @@
-# GitHub Trending Tracker
+# GitHub Tracker
 
-A Python tool that tracks trending repositories on GitHub for Python and Java projects.
+GitHub 项目追踪器，用于监控热门项目和关注项目的最新动态。
 
-## Features
+## 功能特点
 
-- Tracks top 5 trending repositories for Python and Java
-- Updates data twice daily (8 AM and 8 PM)
-- Saves data in JSON format
-- Displays results grouped by programming language
+- 自动获取 GitHub 热门项目
+  - 支持 Python 和 Java 语言
+  - 按照 Star 数量排序
+  - 显示项目描述和统计信息
+- 项目追踪功能
+  - 可以关注感兴趣的项目
+  - 自动获取项目最新动态
+  - 支持查看提交、Issue、PR 等活动
+- 定时更新
+  - 每天自动更新热门项目列表
+  - 定期获取已追踪项目的最新动态
 
-## Requirements
+## 技术栈
 
-- Python 3.7+
-- GitHub Personal Access Token
+### 后端
+- Python 3.8+
+- FastAPI
+- PyGithub
+- Schedule
 
-## Installation
+### 前端
+- React 18
+- TypeScript
+- Material-UI
+- React Query
+- Vite
 
-1. Clone the repository:
+## 快速开始
+
+1. 克隆项目
 ```bash
 git clone https://github.com/your-username/github-tracker.git
 cd github-tracker
 ```
 
-2. Install dependencies:
+2. 设置环境
 ```bash
+# 后端设置
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或
+.\venv\Scripts\activate  # Windows
 pip install -r requirements.txt
+
+# 前端设置
+cd frontend
+npm install
 ```
 
-3. Create a `.env` file in the project root directory and add your GitHub token:
+3. 配置
+- 复制 `.env.example` 为 `.env`
+- 添加你的 GitHub Token：
 ```
-GITHUB_TOKEN=your_github_token_here
+GITHUB_TOKEN=your_token_here
 ```
 
-## Usage
-
-### Running the tracker directly:
+4. 启动服务
 ```bash
-python src/github_tracker.py
+# 启动后端
+python run_api.py
+
+# 启动前端（新终端）
+cd frontend
+npm run dev
 ```
 
-### Running with scheduler:
-```bash
-python main.py
-```
+5. 访问
+- 前端界面：http://localhost:5173
+- API 文档：http://localhost:8000/docs
 
-## Data Format
-
-The data is saved in JSON format:
-```json
-{
-  "timestamp": "2024-03-21T12:34:56",
-  "trending_repositories": {
-    "description": "Top 5 trending Python and Java projects created in the last week",
-    "data": [
-      {
-        "name": "username/repo",
-        "description": "Project description",
-        "stars": 1234,
-        "url": "https://github.com/username/repo",
-        "language": "Python"
-      }
-    ]
-  }
-}
-```
-
-## Project Structure
+## 项目结构
 
 ```
 github_tracker/
-├── src/
-│   ├── __init__.py
-│   ├── github_tracker.py
-│   └── scheduler.py
-├── data/                  # Generated data files (gitignored)
-├── main.py
-├── requirements.txt
-└── README.md
+├── frontend/           # 前端项目
+│   ├── src/           # 源代码
+│   ├── public/        # 静态资源
+│   └── package.json   # 依赖配置
+├── src/               # 后端源代码
+│   ├── github_tracker.py    # GitHub API 交互
+│   ├── repo_activity_tracker.py  # 项目活动追踪
+│   ├── api_server.py   # FastAPI 服务器
+│   └── scheduler.py    # 定时任务
+├── config/            # 配置文件
+├── data/             # 数据存储
+└── requirements.txt   # Python 依赖
 ```
 
-## Configuration
+## 版本历史
 
-- Data is saved in the `data` directory
-- Tracking interval can be modified in `src/scheduler.py`
-- Target languages can be modified in `src/github_tracker.py`
+- v1.0.0
+  - 实现基础功能：热门项目获取和追踪
+  - 添加前端界面
+  - 支持项目活动监控
 
-## Note
+## 贡献指南
 
-Make sure to keep your GitHub token private and never commit it to the repository. 
+1. Fork 项目
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交改动 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 提交 Pull Request
+
+## 许可证
+
+MIT License - 详见 [LICENSE](LICENSE) 文件 
