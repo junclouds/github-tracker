@@ -24,7 +24,8 @@ import {
   List,
   ListItem,
   ListItemText,
-  Divider
+  Divider,
+  TextField
 } from '@mui/material'
 import { QueryClient, QueryClientProvider, useQuery, useMutation } from '@tanstack/react-query'
 import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo, refreshActivities } from './api/github'
@@ -67,6 +68,7 @@ function MainContent() {
   const [selectedRepo, setSelectedRepo] = useState<TrackedRepo | null>(null)
   const [activityDialogOpen, setActivityDialogOpen] = useState(false)
   const [loadingActivities, setLoadingActivities] = useState(false)
+  const [newRepoFullName, setNewRepoFullName] = useState('')
 
   // 热门仓库查询
   const { 
@@ -176,12 +178,45 @@ function MainContent() {
     }
   };
 
+  const handleAddRepo = async () => {
+    if (!newRepoFullName) {
+      setMessage('请输入项目全名');
+      return;
+    }
+
+    try {
+      await trackRepo(newRepoFullName); 
+      setMessage('项目已成功添加到追踪列表！');
+      setNewRepoFullName(''); 
+      refetchTrackedRepos(); 
+    } catch (error) {
+      console.error('添加项目时出错:', error);
+      setMessage('添加项目失败，请检查项目名称');
+    }
+  };
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom>
           GitHub 项目追踪器
         </Typography>
+
+        <Box sx={{ display: 'flex', mb: 2 }}>
+          <TextField
+            label="输入项目全名 (例如: owner/repo)"
+            variant="outlined"
+            value={newRepoFullName}
+            onChange={(e) => setNewRepoFullName(e.target.value)}
+            sx={{ flexGrow: 1, mr: 1 }}
+          />
+          <Button 
+            variant="contained" 
+            onClick={handleAddRepo} 
+          >
+            添加项目
+          </Button>
+        </Box>
         
         <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
           <Tabs value={tabValue} onChange={handleTabChange} aria-label="项目追踪标签页">
