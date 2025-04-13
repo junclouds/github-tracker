@@ -1,1 +1,0 @@
-A Python tool that automatically tracks and analyzes trending repositories on GitHub for Python and Java projects. Updates twice daily with the most starred new projects. 
