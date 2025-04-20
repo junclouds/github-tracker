@@ -10,8 +10,8 @@ export async function fetchHotRepos(): Promise<Repo[]> {
   return response.json()
 }
 
-export async function fetchTrackedRepos(): Promise<TrackedRepo[]> {
-  const response = await fetch(`${API_BASE_URL}/api/tracked-repos`)
+export async function fetchTrackedRepos(days: number = 1): Promise<TrackedRepo[]> {
+  const response = await fetch(`${API_BASE_URL}/api/tracked-repos?days=${days}`)
   if (!response.ok) {
     throw new Error('Failed to fetch tracked repos')
   }

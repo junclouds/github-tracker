@@ -11,6 +11,12 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from dateutil import parser
+from .date_handler import DateHandler
+import logging 
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
 
 # 加载环境变量
 load_dotenv()
@@ -68,8 +74,12 @@ async def get_hot_repos() -> List[Dict[str, Any]]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/tracked-repos")
-async def get_tracked_repos() -> List[Dict[str, Any]]:
-    """获取已追踪的仓库列表"""
+async def get_tracked_repos(days: int = 1) -> List[Dict[str, Any]]:
+    """获取已追踪的仓库列表
+    
+    Args:
+        days: 获取最近几天的活动，默认为1天
+    """
     try:
         # 从配置文件读取追踪的仓库
         config_file = base_dir / "config" / "tracked_repos.json"
@@ -90,15 +100,15 @@ async def get_tracked_repos() -> List[Dict[str, Any]]:
             repo_files.sort(reverse=True)  # 最新的文件排在前面
             
             repo_data = {
-                "full_name": repo_full_name,
-                "name": repo_full_name.split("/")[-1],
-                "description": "",
-                "stars": 0,
-                "forks": 0,
-                "updated_at": "",
-                "has_updates": False,
-                "last_updated": "",
-                "activities": []
+                "full_name": repo_full_name,  # 仓库的完整名称
+                "name": repo_full_name.split("/")[-1],  # 仓库名称
+                "description": "",  # 仓库描述
+                "stars": 0,  # 星标数量
+                "forks": 0,  # Fork 数量
+                "updated_at": "",  # 最后更新时间
+                "has_updates": False,  # 是否有更新
+                "last_updated": "",  # 最后更新的时间
+                "activities": []  # 活动列表
             }
             
             if repo_files:
@@ -109,13 +119,15 @@ async def get_tracked_repos() -> List[Dict[str, Any]]:
                     # 更新仓库信息
                     repo_data["last_updated"] = activity_data.get("timestamp", "")
                     
-                    # 检查是否有未读更新（最近一天内的活动）
-                    recent_time = datetime.now() - timedelta(days=1)
+                    # 检查是否有未读更新（根据传入的days参数）
+                    recent_time = DateHandler.get_recent_time(days)  # datetime.now() - timedelta(days=days)
+                    logging.info(f"{days}天前的日期: {recent_time.strftime('%Y-%m-%d %H:%M:%S')}")
                     
                     # 处理提交
                     activities = []
                     for commit in activity_data.get("activities", {}).get("commits", []):
-                        commit_date = datetime.fromisoformat(commit["date"].replace("Z", "+00:00"))
+                        commit_date = DateHandler.parse(commit["date"]) #parser.isoparse(commit["date"])
+                        logging.info(f"commit 日期: {commit_date.strftime('%Y-%m-%d %H:%M:%S')}")
                         activities.append({
                             "type": "Commit",
                             "title": commit["message"].split("\n")[0],
@@ -128,7 +140,8 @@ async def get_tracked_repos() -> List[Dict[str, Any]]:
                     
                     # 处理议题
                     for issue in activity_data.get("activities", {}).get("issues", []):
-                        issue_date = datetime.fromisoformat(issue["updated_at"].replace("Z", "+00:00"))
+                        issue_date = DateHandler.parse(issue["updated_at"]) #parser.isoparse(issue["updated_at"])
+                        logging.info(f"issue 日期: {issue_date.strftime('%Y-%m-%d %H:%M:%S')}")
                         activities.append({
                             "type": "Issue",
                             "title": issue["title"],
@@ -141,7 +154,8 @@ async def get_tracked_repos() -> List[Dict[str, Any]]:
                     
                     # 处理PR
                     for pr in activity_data.get("activities", {}).get("pull_requests", []):
-                        pr_date = datetime.fromisoformat(pr["updated_at"].replace("Z", "+00:00"))
+                        pr_date = DateHandler.parse(pr["updated_at"]) #parser.isoparse(pr["updated_at"])
+                        logging.info(f"pr 日期: {pr_date.strftime('%Y-%m-%d %H:%M:%S')}")
                         activities.append({
                             "type": "Pull Request",
                             "title": pr["title"],
@@ -154,7 +168,8 @@ async def get_tracked_repos() -> List[Dict[str, Any]]:
                     
                     # 处理发布
                     for release in activity_data.get("activities", {}).get("releases", []):
-                        release_date = datetime.fromisoformat(release["date"].replace("Z", "+00:00"))
+                        release_date = DateHandler.parse(release["date"]) #parser.isoparse(release["date"])
+                        logging.info(f"release 日期: {release_date.strftime('%Y-%m-%d %H:%M:%S')}")
                         activities.append({
                             "type": "Release",
                             "title": release["name"],

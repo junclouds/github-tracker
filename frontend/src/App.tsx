@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import React from 'react';
+import { useState } from 'react';
 import { 
   Container, 
   Typography, 
@@ -70,7 +71,7 @@ function MainContent() {
   const [activityDialogOpen, setActivityDialogOpen] = useState(false)
   const [loadingActivities, setLoadingActivities] = useState(false)
   const [newRepoFullName, setNewRepoFullName] = useState('')
-  const [refreshDays, setRefreshDays] = useState<number>(7);
+  const [refreshDays, setRefreshDays] = useState<number>(1);
   const [refreshingRepos, setRefreshingRepos] = useState<Set<string>>(new Set());
 
   // 热门仓库查询
@@ -91,8 +92,8 @@ function MainContent() {
     refetch: refetchTrackedRepos,
     isLoading: isLoadingTrackedRepos 
   } = useQuery({
-    queryKey: ['trackedRepos'],
-    queryFn: fetchTrackedRepos,
+    queryKey: ['trackedRepos', refreshDays],
+    queryFn: () => fetchTrackedRepos(refreshDays),
     enabled: true,
     refetchOnWindowFocus: false
   })
