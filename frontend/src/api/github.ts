@@ -75,3 +75,11 @@ export const refreshRepoActivities = async (repoFullName: string, days: number =
   }
   return response.json();
 };
+
+export async function searchRepos(query: string): Promise<Repo[]> {
+  const response = await fetch(`${API_BASE_URL}/api/search-repos?query=${encodeURIComponent(query)}`)
+  if (!response.ok) {
+    throw new Error('Failed to search repos')
+  }
+  return response.json()
+}

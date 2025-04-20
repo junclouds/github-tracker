@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import os
@@ -298,6 +298,34 @@ async def refresh_repo_activities(owner: str, repo: str, days: int = 7):
                 detail=f"Failed to get activities for repository {repo_full_name}"
             )
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/search-repos")
+async def search_repos(query: str = Query(..., description="搜索关键词")) -> List[Dict[str, Any]]:
+    """搜索GitHub仓库
+    
+    Args:
+        query: 搜索关键词
+    """
+    try:
+        # 使用 GitHub API 搜索仓库
+        repos = github_tracker.search_repositories(query)
+        
+        # 转换数据格式以匹配前端需求
+        formatted_repos = []
+        for repo in repos:
+            formatted_repos.append({
+                "name": repo["name"].split("/")[-1],
+                "full_name": repo["name"],
+                "description": repo["description"],
+                "stars": repo["stars"],
+                "forks": repo.get("forks", 0),
+                "updated_at": repo.get("updated_at", datetime.now().isoformat()),
+                "url": repo["url"]
+            })
+        return formatted_repos
+    except Exception as e:
+        logging.error(f"搜索仓库时出错: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # 添加定时任务

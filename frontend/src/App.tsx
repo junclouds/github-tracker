@@ -30,7 +30,7 @@ import {
   MenuItem
 } from '@mui/material'
 import { QueryClient, QueryClientProvider, useQuery, useMutation } from '@tanstack/react-query'
-import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo, refreshActivities, refreshRepoActivities } from './api/github'
+import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo, refreshActivities, refreshRepoActivities, searchRepos } from './api/github'
 import { Repo, TrackedRepo } from './types'
 
 const queryClient = new QueryClient()
@@ -73,6 +73,9 @@ function MainContent() {
   const [newRepoFullName, setNewRepoFullName] = useState('')
   const [refreshDays, setRefreshDays] = useState<number>(1);
   const [refreshingRepos, setRefreshingRepos] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchResults, setSearchResults] = useState<Repo[]>([])
 
   // 热门仓库查询
   const { 
@@ -217,6 +220,33 @@ function MainContent() {
     }
   };
 
+  // 添加搜索处理函数
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query)
+    
+    if (query.trim().length >= 3) {  // 至少3个字符才触发搜索
+      setIsSearching(true)
+      try {
+        const results = await searchRepos(query)
+        setSearchResults(results)
+      } catch (error) {
+        console.error('搜索出错:', error)
+        setMessage('搜索失败，请重试')
+      } finally {
+        setIsSearching(false)
+      }
+    } else {
+      setSearchResults([])
+    }
+  }
+
+  // 修改过滤逻辑
+  const displayedRepos = searchQuery.length >= 3 ? searchResults : hotRepos
+  const filteredRepos = displayedRepos.filter(repo => 
+    repo.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    repo.description?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
@@ -240,22 +270,34 @@ function MainContent() {
         </Box>
 
         <TabPanel value={tabValue} index={0}>
-          <Box sx={{ mb: 4 }}>
+          <Box sx={{ mb: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
             <Button 
               variant="contained" 
               onClick={handleRefreshRepos}
               disabled={loading || isLoadingHotRepos}
-              sx={{ mr: 2 }}
             >
               {(loading || isLoadingHotRepos) ? <CircularProgress size={24} color="inherit" /> : '刷新热门项目'}
             </Button>
+            
+            {/* 添加搜索框 */}
+            <TextField
+              label="搜索项目"
+              variant="outlined"
+              size="small"
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              sx={{ flexGrow: 1 }}
+              placeholder="输入至少3个字符搜索项目..."
+            />
           </Box>
 
           <TableContainer component={Paper}>
-            {isLoadingHotRepos ? (
+            {(isLoadingHotRepos || isSearching) ? (
               <Box sx={{ p: 3, textAlign: 'center' }}>
                 <CircularProgress />
-                <Typography sx={{ mt: 2 }}>正在加载项目数据...</Typography>
+                <Typography sx={{ mt: 2 }}>
+                  {isSearching ? '正在搜索项目...' : '正在加载项目数据...'}
+                </Typography>
               </Box>
             ) : (
               <Table sx={{ minWidth: 650 }} aria-label="热门项目表格">
@@ -266,11 +308,12 @@ function MainContent() {
                     <TableCell align="right">Stars</TableCell>
                     <TableCell align="right">Forks</TableCell>
                     <TableCell align="right">最近更新</TableCell>
+                    <TableCell>GitHub</TableCell>
                     <TableCell>操作</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {hotRepos.map((repo: Repo) => (
+                  {filteredRepos.map((repo: Repo) => (
                     <TableRow key={repo.full_name}>
                       <TableCell component="th" scope="row">
                         <Typography variant="body2" component="div">
@@ -284,6 +327,17 @@ function MainContent() {
                       <TableCell align="right">{repo.forks}</TableCell>
                       <TableCell align="right">
                         {new Date(repo.updated_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="text"
+                          size="small"
+                          href={`https://github.com/${repo.full_name}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          访问
+                        </Button>
                       </TableCell>
                       <TableCell>
                         <Button 

@@ -5,6 +5,8 @@ from typing import List, Dict, Any
 from github import Github
 from pathlib import Path
 from dotenv import load_dotenv
+import requests
+import logging
 
 class GitHubTracker:
     """GitHub 数据追踪器"""
@@ -18,6 +20,7 @@ class GitHubTracker:
             base_dir: 项目根目录
         """
         self.github = Github(token)
+        self.github_token = token  # 保存token
         self.languages = ["python", "java"]
         self.base_dir = base_dir
         self.data_dir = base_dir / "data"
@@ -116,6 +119,46 @@ class GitHubTracker:
                 
         except Exception as e:
             print(f"显示数据时出错: {str(e)}")
+
+    def search_repositories(self, query: str) -> List[Dict[str, Any]]:
+        """
+        搜索GitHub仓库
+        
+        Args:
+            query: 搜索关键词
+            
+        Returns:
+            List[Dict[str, Any]]: 搜索结果列表
+        """
+        try:
+            # 构建搜索URL
+            search_url = f"https://api.github.com/search/repositories?q={query}&sort=stars&order=desc"
+            
+            # 发送请求
+            response = requests.get(
+                search_url,
+                headers={"Authorization": f"token {self.github_token}"}  # 使用保存的token
+            )
+            response.raise_for_status()
+            
+            # 解析响应
+            data = response.json()
+            repos = []
+            
+            for item in data.get("items", [])[:10]:  # 限制返回前10个结果
+                repos.append({
+                    "name": item["full_name"],
+                    "description": item.get("description", ""),
+                    "stars": item.get("stargazers_count", 0),
+                    "forks": item.get("forks_count", 0),
+                    "updated_at": item.get("updated_at"),
+                    "url": item["html_url"]
+                })
+            
+            return repos
+        except Exception as e:
+            logging.error(f"搜索GitHub仓库时出错: {str(e)}")
+            raise
 
     @classmethod
     def main(cls):
