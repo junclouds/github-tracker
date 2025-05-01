@@ -36,6 +36,7 @@ app.add_middleware(
 # 获取项目根目录
 base_dir = Path(__file__).parent.parent
 github_token = os.getenv('GITHUB_TOKEN')
+zhipu_api_key = os.getenv('ZHIPU_API_KEY')
 
 if not github_token:
     raise ValueError("请设置 GITHUB_TOKEN 环境变量")
@@ -62,9 +63,10 @@ async def get_hot_repos() -> List[Dict[str, Any]]:
                 "name": repo["name"].split("/")[-1],  # 从 full_name 中提取仓库名
                 "full_name": repo["name"],
                 "description": repo["description"],
+                "description_zh": repo["description_zh"],
                 "stars": repo["stars"],
-                "forks": 0,  # 需要从 API 获取
-                "updated_at": datetime.now().isoformat(),  # 临时使用当前时间
+                "forks": repo["forks"],
+                "updated_at": repo["updated_at"].isoformat(),
                 "url": repo["url"]
             })
         print(f"返回格式化后的仓库数据: {formatted_repos}")  # 添加调试日志
@@ -344,3 +346,7 @@ scheduler.start()
 @app.on_event("shutdown")
 def shutdown_scheduler():
     scheduler.shutdown()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

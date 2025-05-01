@@ -1,12 +1,14 @@
 import os
 import json
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from github import Github
 from pathlib import Path
 from dotenv import load_dotenv
 import requests
 import logging
+from .llm.base_llm import BaseLLM
+from .llm.zhipu_client import ZhipuLLM
 
 class GitHubTracker:
     """GitHub 数据追踪器"""
@@ -25,10 +27,15 @@ class GitHubTracker:
         self.base_dir = base_dir
         self.data_dir = base_dir / "data"
         
+        # 初始化LLM客户端
+        config_path = base_dir / "config" / "model_config.yaml"
+        self.llm = ZhipuLLM(config_path)
+        
     def get_trending_repositories(self) -> List[Dict[str, Any]]:
         """获取热门仓库"""
         try:
             trending_repos = []
+            items_to_translate = []  # 存储需要翻译的项目名称和描述
             
             for language in self.languages:
                 # 搜索过去一周内创建的，按照星标数排序的特定语言仓库
@@ -42,15 +49,32 @@ class GitHubTracker:
                     if count >= 5:  # 每种语言取前5个，总共10个
                         break
                         
+                    # 将需要翻译的文本添加到列表中
+                    items_to_translate.append((
+                        repo.name,  # 仓库名称
+                        repo.description or ""  # 仓库描述，如果为None则使用空字符串
+                    ))
+                    
                     repo_data = {
                         "name": repo.full_name,
                         "description": repo.description,
                         "stars": repo.stargazers_count,
+                        "forks": repo.forks_count,
                         "url": repo.html_url,
-                        "language": repo.language
+                        "language": repo.language,
+                        "updated_at": repo.updated_at
                     }
                     trending_repos.append(repo_data)
                     count += 1
+            
+            # 批量翻译
+            if items_to_translate:
+                translations = self.llm.batch_translate(items_to_translate)
+                
+                # 将翻译结果添加到仓库数据中
+                for repo_data, (name_zh, desc_zh) in zip(trending_repos, translations):
+                    repo_data["name_zh"] = name_zh
+                    repo_data["description_zh"] = desc_zh
                     
             return trending_repos
         except Exception as e:
@@ -66,7 +90,9 @@ class GitHubTracker:
                     "description": "Top 5 trending Python and Java projects created in the last week",
                     "data": [{
                         "name": repo["name"],
+                        "name_zh": repo.get("name_zh", ""),
                         "description": repo["description"],
+                        "description_zh": repo.get("description_zh", ""),
                         "stars": repo["stars"],
                         "url": repo["url"],
                         "language": repo["language"]
@@ -113,7 +139,11 @@ class GitHubTracker:
                 print(f"\n=== {language} Projects ===")
                 for repo in repos:
                     print(f"\n- {repo['name']}")
+                    if repo.get('name_zh'):
+                        print(f"  中文名称: {repo['name_zh']}")
                     print(f"  Description: {repo['description']}")
+                    if repo.get('description_zh'):
+                        print(f"  中文描述: {repo['description_zh']}")
                     print(f"  Stars: {repo['stars']}")
                     print(f"  URL: {repo['url']}")
                 

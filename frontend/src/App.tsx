@@ -322,7 +322,13 @@ function MainContent() {
                           <small>{repo.full_name}</small>
                         </Typography>
                       </TableCell>
-                      <TableCell>{repo.description}</TableCell>
+                      <TableCell component="th" scope="row">
+                        <Typography variant="body2" component="div">
+                          <strong>{repo.description_zh}</strong>
+                          <br />
+                          <small>{repo.description}</small>
+                        </Typography>
+                      </TableCell>
                       <TableCell align="right">{repo.stars}</TableCell>
                       <TableCell align="right">{repo.forks}</TableCell>
                       <TableCell align="right">

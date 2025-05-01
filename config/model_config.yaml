@@ -1,0 +1,43 @@
+# GitHub API配置
+github:
+  token: ${GITHUB_TOKEN}  # 从环境变量获取
+  languages: 
+    - python
+    - java
+  max_results: 10
+  search_sort: stars
+  search_order: desc
+
+# API服务器配置
+api_server:
+  host: "localhost"
+  port: 8000
+  cors_origins:
+    - "http://localhost:5173"
+    - "http://127.0.0.1:5173"
+
+# 数据存储配置
+storage:
+  base_dir: "data"
+  cache_dir: "cache"
+  prompts_dir: "prompts"
+  outputs_dir: "outputs"
+  embeddings_dir: "embeddings"
+
+# 日志配置
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# LLM配置
+llm:
+  default: "zhipu"  # 默认使用的LLM，可选值：zhipu, ollama
+  zhipu:
+    api_key: ${os.getenv('ZHIPU_API_KEY')}  # 从环境变量获取
+    model: "glm-4-plus"
+    temperature: 0.95
+    max_tokens: 1024
+  ollama:
+    base_url: "http://localhost:11434"  # Ollama服务地址
+    model: "qwen3:0.6b"  # 使用的模型名称 

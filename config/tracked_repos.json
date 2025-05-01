@@ -1,19 +1,13 @@
 {
   "repositories": [
     {
-      "full_name": "SakanaAI/AI-Scientist-v2"
-    },
-    {
       "full_name": "langchain-ai/langchain"
     },
     {
       "full_name": "langchain-ai/langgraph"
     },
     {
-      "full_name": "harishsg993010/damn-vulnerable-MCP-server"
-    },
-    {
-      "full_name": "chatchat-space/Langchain-Chatchat"
+      "full_name": "buster-so/buster"
     }
   ]
 }
