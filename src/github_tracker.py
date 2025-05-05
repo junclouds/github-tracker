@@ -190,6 +190,43 @@ class GitHubTracker:
             logging.error(f"搜索GitHub仓库时出错: {str(e)}")
             raise
 
+    def get_repository_details(self, repo_full_name: str) -> Dict[str, Any]:
+        """
+        获取指定仓库的详细信息
+        
+        Args:
+            repo_full_name: 仓库全名，格式为 "owner/repo"
+            
+        Returns:
+            Dict[str, Any]: 仓库详情
+        """
+        try:
+            # 通过PyGitHub库获取仓库信息
+            repo = self.github.get_repo(repo_full_name)
+            
+            # 返回格式化的仓库详情
+            return {
+                "name": repo.name,
+                "full_name": repo.full_name,
+                "description": repo.description,
+                "stars": repo.stargazers_count,
+                "forks": repo.forks_count,
+                "updated_at": repo.updated_at.isoformat() if repo.updated_at else "",
+                "url": repo.html_url
+            }
+        except Exception as e:
+            logging.error(f"获取仓库 {repo_full_name} 详情时出错: {str(e)}")
+            # 出错时返回基本信息
+            return {
+                "name": repo_full_name.split('/')[-1],
+                "full_name": repo_full_name,
+                "description": "",
+                "stars": 0,
+                "forks": 0,
+                "updated_at": datetime.now().isoformat(),
+                "url": f"https://github.com/{repo_full_name}"
+            }
+
     @classmethod
     def main(cls):
         """主方法，用于直接运行该类"""

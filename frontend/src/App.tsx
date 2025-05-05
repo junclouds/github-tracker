@@ -424,12 +424,15 @@ function MainContent() {
             </Alert>
           ) : (
             <TableContainer component={Paper}>
-              <Table sx={{ minWidth: 650 }} aria-label="已跟踪项目表格">
+              <Table sx={{ minWidth: 650 }} aria-label="已追踪项目表格">
                 <TableHead>
                   <TableRow>
                     <TableCell>项目名称</TableCell>
-                    <TableCell>上次更新时间</TableCell>
-                    <TableCell>状态</TableCell>
+                    <TableCell>描述</TableCell>
+                    <TableCell align="right">Stars</TableCell>
+                    <TableCell align="right">Forks</TableCell>
+                    <TableCell align="right">最近更新</TableCell>
+                    <TableCell>GitHub</TableCell>
                     <TableCell>操作</TableCell>
                   </TableRow>
                 </TableHead>
@@ -443,23 +446,26 @@ function MainContent() {
                           <small>{repo.full_name}</small>
                         </Typography>
                       </TableCell>
-                      <TableCell>
+                      <TableCell component="th" scope="row">
+                        <Typography variant="body2" component="div">
+                          <strong>{repo.description}</strong>
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">{repo.stars}</TableCell>
+                      <TableCell align="right">{repo.forks}</TableCell>
+                      <TableCell align="right">
                         {repo.last_updated ? new Date(repo.last_updated).toLocaleString() : '尚未获取'}
                       </TableCell>
                       <TableCell>
-                        {repo.has_updates ? (
-                          <Alert severity="info" sx={{ py: 0 }}>
-                            最近 {refreshDays} 天内有更新
-                            {/* 可以添加具体更新时间 */}
-                            <Typography variant="caption" display="block">
-                              最新提交: {new Date(repo.activities[0]?.created_at).toLocaleString()}
-                            </Typography>
-                          </Alert>
-                        ) : (
-                          <Typography color="text.secondary">
-                            无更新 (已检查近 {refreshDays} 天)
-                          </Typography>
-                        )}
+                        <Button
+                          variant="text"
+                          size="small"
+                          href={`https://github.com/${repo.full_name}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          访问
+                        </Button>
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 1 }}>

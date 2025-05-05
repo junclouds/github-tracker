@@ -97,17 +97,21 @@ async def get_tracked_repos(days: int = 1) -> List[Dict[str, Any]]:
         
         for repo in config.get('repositories', []):
             repo_full_name = repo['full_name']
+            
+            # 获取仓库详情信息
+            repo_details = github_tracker.get_repository_details(repo_full_name)
+            
             # 查找该仓库的最新活动文件
             repo_files = list(activity_dir.glob(f"{repo_full_name.replace('/', '_')}*.json"))
             repo_files.sort(reverse=True)  # 最新的文件排在前面
             
             repo_data = {
                 "full_name": repo_full_name,  # 仓库的完整名称
-                "name": repo_full_name.split("/")[-1],  # 仓库名称
-                "description": "",  # 仓库描述
-                "stars": 0,  # 星标数量
-                "forks": 0,  # Fork 数量
-                "updated_at": "",  # 最后更新时间
+                "name": repo_details.get("name", repo_full_name.split("/")[-1]),  # 仓库名称
+                "description": repo_details.get("description", ""),  # 仓库描述
+                "stars": repo_details.get("stars", 0),  # 星标数量
+                "forks": repo_details.get("forks", 0),  # Fork 数量
+                "updated_at": repo_details.get("updated_at", ""),  # 最后更新时间
                 "has_updates": False,  # 是否有更新
                 "last_updated": "",  # 最后更新的时间
                 "activities": []  # 活动列表
