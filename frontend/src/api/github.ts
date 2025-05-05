@@ -83,3 +83,79 @@ export async function searchRepos(query: string): Promise<Repo[]> {
   }
   return response.json()
 }
+
+// 获取定时任务列表
+export async function fetchScheduledTasks() {
+  const response = await fetch(`${API_BASE_URL}/api/scheduled-tasks`)
+  if (!response.ok) {
+    throw new Error('Failed to fetch scheduled tasks')
+  }
+  return response.json()
+}
+
+// 创建定时任务
+export async function createScheduledTask(taskData: {
+  email: string;
+  repositories: string[];
+  frequency: string;
+  weekday?: string;
+  monthDay?: string;
+}) {
+  const response = await fetch(`${API_BASE_URL}/api/scheduled-tasks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(taskData),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to create scheduled task')
+  }
+  return response.json()
+}
+
+// 删除定时任务
+export async function deleteScheduledTask(taskId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/scheduled-tasks/${taskId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    throw new Error('Failed to delete scheduled task')
+  }
+  return response.json()
+}
+
+// 立即执行定时任务
+export async function executeScheduledTask(taskId: string) {
+  const response = await fetch(`${API_BASE_URL}/api/scheduled-tasks/${taskId}/execute`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    throw new Error('Failed to execute scheduled task')
+  }
+  return response.json()
+}
+
+// 更新定时任务
+export async function updateScheduledTask(
+  taskId: string,
+  taskData: {
+    email: string;
+    repositories: string[];
+    frequency: string;
+    weekday?: string;
+    monthDay?: string;
+  }
+) {
+  const response = await fetch(`${API_BASE_URL}/api/scheduled-tasks/${taskId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(taskData),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to update scheduled task')
+  }
+  return response.json()
+}

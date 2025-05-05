@@ -24,4 +24,15 @@ export interface TrackedRepo extends Repo {
   has_updates: boolean
   last_updated: string
   summary?: string
+}
+
+export interface ScheduledTask {
+  id: string
+  email: string
+  repositories: string[]
+  frequency: 'immediate' | 'daily' | 'weekly' | 'monthly'
+  weekday?: string
+  monthDay?: string
+  executeTime?: string
+  created_at: string
 } 
