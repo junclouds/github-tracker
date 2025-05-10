@@ -31,8 +31,13 @@ class GitHubTracker:
         config_path = base_dir / "config" / "model_config.yaml"
         self.llm = ZhipuLLM(config_path)
         
-    def get_trending_repositories(self) -> List[Dict[str, Any]]:
-        """获取热门仓库"""
+    def get_trending_repositories(self, should_translate: bool = False) -> List[Dict[str, Any]]:
+        """
+        获取热门仓库
+        
+        Args:
+            should_translate: 是否翻译仓库名称和描述，默认为False
+        """
         try:
             trending_repos = []
             items_to_translate = []  # 存储需要翻译的项目名称和描述
@@ -50,10 +55,11 @@ class GitHubTracker:
                         break
                         
                     # 将需要翻译的文本添加到列表中
-                    items_to_translate.append((
-                        repo.name,  # 仓库名称
-                        repo.description or ""  # 仓库描述，如果为None则使用空字符串
-                    ))
+                    if should_translate:
+                        items_to_translate.append((
+                            repo.name,  # 仓库名称
+                            repo.description or ""  # 仓库描述，如果为None则使用空字符串
+                        ))
                     
                     repo_data = {
                         "name": repo.full_name,
@@ -68,13 +74,18 @@ class GitHubTracker:
                     count += 1
             
             # 批量翻译
-            if items_to_translate:
+            if should_translate and items_to_translate:
                 translations = self.llm.batch_translate(items_to_translate)
                 
                 # 将翻译结果添加到仓库数据中
                 for repo_data, (name_zh, desc_zh) in zip(trending_repos, translations):
                     repo_data["name_zh"] = name_zh
                     repo_data["description_zh"] = desc_zh
+            else:
+                # 如果不需要翻译，添加空的翻译字段
+                for repo_data in trending_repos:
+                    repo_data["name_zh"] = ""
+                    repo_data["description_zh"] = ""
                     
             return trending_repos
         except Exception as e:

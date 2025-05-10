@@ -29,9 +29,9 @@ class BaseLLM(ABC):
             return f.read().strip()
             
     @abstractmethod
-    def _call_model(self, prompt: str) -> str:
+    async def _call_model(self, prompt: str) -> str:
         """
-        调用模型API
+        异步调用模型API
         
         Args:
             prompt: 提示词
@@ -41,7 +41,7 @@ class BaseLLM(ABC):
         """
         pass
             
-    def translate(self, text: str, from_lang: str = "en", to_lang: str = "zh") -> str:
+    async def translate(self, text: str, from_lang: str = "en", to_lang: str = "zh") -> str:
         """
         文本翻译
         
@@ -62,9 +62,9 @@ class BaseLLM(ABC):
             from_lang=from_lang,
             to_lang=to_lang
         )
-        return self._call_model(prompt)
+        return await self._call_model(prompt)
         
-    def summarize(self, text: str) -> str:
+    async def summarize(self, text: str) -> str:
         """
         文本总结
         
@@ -79,9 +79,9 @@ class BaseLLM(ABC):
             
         template = self._load_prompt("summarize")
         prompt = template.format(text=text)
-        return self._call_model(prompt)
+        return await self._call_model(prompt)
         
-    def batch_translate(self, items: List[Tuple[str, str]], from_lang: str = "en", to_lang: str = "zh") -> List[Tuple[str, str]]:
+    async def batch_translate(self, items: List[Tuple[str, str]], from_lang: str = "en", to_lang: str = "zh") -> List[Tuple[str, str]]:
         """
         批量翻译文本
         
@@ -115,7 +115,7 @@ class BaseLLM(ABC):
         )
         
         # 调用模型获取翻译结果
-        response = self._call_model(prompt)
+        response = await self._call_model(prompt)
         
         # 解析翻译结果
         translations = []

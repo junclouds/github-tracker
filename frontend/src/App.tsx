@@ -37,10 +37,32 @@ import {
   InputLabel,
   Select,
   SelectChangeEvent,
-  Tooltip
+  Tooltip,
+  Card,
+  CardContent,
+  Switch
 } from '@mui/material'
-import { QueryClient, QueryClientProvider, useQuery, useMutation } from '@tanstack/react-query'
-import { fetchHotRepos, trackRepo, fetchTrackedRepos, untrackRepo, refreshActivities, refreshRepoActivities, searchRepos, fetchScheduledTasks, createScheduledTask, deleteScheduledTask, updateScheduledTask, executeScheduledTask } from './api/github'
+import { QueryClient, QueryClientProvider, useQuery, useMutation, UseQueryResult, UseQueryOptions } from '@tanstack/react-query'
+import { 
+  fetchTrackedRepos, 
+  trackRepo, 
+  untrackRepo, 
+  refreshActivities, 
+  refreshRepoActivities, 
+  searchRepos, 
+  fetchScheduledTasks, 
+  createScheduledTask, 
+  deleteScheduledTask, 
+  updateScheduledTask, 
+  executeScheduledTask,
+  getTrackedReposSummary,
+  refreshTrackedReposSummary,
+  fetchTrackedReposOnly,
+  fetchTrackedReposSummaryOnly,
+  getHotRepos,
+  refreshHotRepos,
+  HotReposResponse
+} from './api/github'
 import { Repo, TrackedRepo, ScheduledTask } from './types'
 
 const queryClient = new QueryClient()
@@ -72,6 +94,12 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
+// 定义响应类型
+interface TrackedReposResponse {
+  repos: TrackedRepo[];
+  summary: string;
+}
+
 // 将主要内容移到单独的组件中
 function MainContent() {
   const [loading, setLoading] = useState(false)
@@ -96,42 +124,75 @@ function MainContent() {
   const [isDeletingSchedule, setIsDeletingSchedule] = useState<string | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [executeTime, setExecuteTime] = useState('09:00')
+  const [hotReposSummary, setHotReposSummary] = useState<string>('')
+  const [trackedReposSummary, setTrackedReposSummary] = useState<string>('')
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false)
+  const [isRefreshingHotSummary, setIsRefreshingHotSummary] = useState(false);
+  const [isRefreshingTrackedSummary, setIsRefreshingTrackedSummary] = useState(false);
+  const [shouldTranslate, setShouldTranslate] = useState(false)
 
-  // 热门仓库查询
+  // 热门仓库和总结查询
   const { 
-    data: hotRepos = [], 
+    data: hotReposData = { repos: [], summary: '' }, 
     refetch: refetchHotRepos, 
     isLoading: isLoadingHotRepos 
-  } = useQuery({
-    queryKey: ['hotRepos'],
-    queryFn: fetchHotRepos,
-    enabled: true,
-    refetchOnWindowFocus: false
+  } = useQuery<HotReposResponse>({
+    queryKey: ['hotRepos', shouldTranslate],
+    queryFn: () => getHotRepos(shouldTranslate),
+    enabled: tabValue === 0,
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000
   })
 
-  // 跟踪的仓库查询
+  // 刷新热门仓库的mutation
+  const refreshHotReposMutation = useMutation({
+    mutationFn: () => refreshHotRepos(shouldTranslate),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['hotRepos', shouldTranslate], data)
+      setMessage('热门项目数据已更新！')
+    },
+    onError: (error) => {
+      setMessage('更新失败：' + (error as Error).message)
+    }
+  })
+
+  // 已追踪仓库列表查询
   const { 
     data: trackedRepos = [], 
     refetch: refetchTrackedRepos,
     isLoading: isLoadingTrackedRepos 
-  } = useQuery({
-    queryKey: ['trackedRepos', refreshDays],
-    queryFn: () => fetchTrackedRepos(refreshDays),
-    enabled: true,
-    refetchOnWindowFocus: false
-  })
+  } = useQuery<TrackedRepo[]>({
+    queryKey: ['trackedRepos', 'list', refreshDays],
+    queryFn: () => fetchTrackedReposOnly(),
+    enabled: tabValue === 1,
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000
+  } as UseQueryOptions<TrackedRepo[]>)
+
+  // 已追踪仓库总结查询
+  const {
+    data: trackedReposSummaryData = '',
+    isLoading: isLoadingTrackedSummary
+  } = useQuery<string>({
+    queryKey: ['trackedRepos', 'summary', refreshDays],
+    queryFn: () => fetchTrackedReposSummaryOnly(refreshDays),
+    enabled: tabValue === 1,
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000
+  } as UseQueryOptions<string>)
 
   // 获取定时任务列表的查询
   const { 
     data: scheduledTasksData = [], 
     refetch: refetchScheduledTasks,
     isLoading: isLoadingScheduledTasks 
-  } = useQuery({
+  } = useQuery<ScheduledTask[]>({
     queryKey: ['scheduledTasks'],
     queryFn: fetchScheduledTasks,
-    enabled: true,
+    enabled: tabValue === 2,
     refetchOnWindowFocus: false,
-  });
+    staleTime: 5 * 60 * 1000
+  } as UseQueryOptions<ScheduledTask[]>);
 
   // 当定时任务数据变化时更新状态
   React.useEffect(() => {
@@ -163,17 +224,8 @@ function MainContent() {
     }
   })
 
-  const handleRefreshRepos = async () => {
-    setLoading(true)
-    try {
-      await refetchHotRepos()
-      setMessage('数据刷新成功！')
-    } catch (error) {
-      console.error('Error refreshing repos:', error)
-      setMessage('刷新失败，请重试')
-    } finally {
-      setLoading(false)
-    }
+  const handleRefreshHotRepos = () => {
+    refreshHotReposMutation.mutate()
   }
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
@@ -205,12 +257,12 @@ function MainContent() {
 
   // 检查仓库是否已经被跟踪
   const isRepoTracked = (repoFullName: string) => {
-    return trackedRepos.some(repo => repo.full_name === repoFullName)
+    return (trackedRepos as TrackedRepo[]).some((repo: TrackedRepo) => repo.full_name === repoFullName)
   }
 
   // 计算有更新的仓库数量
   const getUpdatedReposCount = () => {
-    return trackedRepos.filter(repo => repo.has_updates).length
+    return (trackedRepos as TrackedRepo[]).filter((repo: TrackedRepo) => repo.has_updates).length
   }
 
   // 更新活动的处理函数
@@ -284,8 +336,8 @@ function MainContent() {
   }
 
   // 修改过滤逻辑
-  const displayedRepos = searchQuery.length >= 3 ? searchResults : hotRepos
-  const filteredRepos = displayedRepos.filter(repo => 
+  const displayedRepos = searchQuery.length >= 3 ? searchResults : hotReposData.repos
+  const filteredRepos = displayedRepos.filter((repo: Repo) => 
     repo.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     repo.description?.toLowerCase().includes(searchQuery.toLowerCase())
   )
@@ -388,6 +440,20 @@ function MainContent() {
     }
   }
 
+  const handleRefreshTrackedSummary = async () => {
+    setIsRefreshingTrackedSummary(true);
+    try {
+      const summary = await refreshTrackedReposSummary(refreshDays);
+      setTrackedReposSummary(summary);
+      setMessage('已追踪项目总结已更新！');
+    } catch (error) {
+      console.error('刷新已追踪项目总结时出错:', error);
+      setMessage('刷新已追踪项目总结失败，请重试');
+    } finally {
+      setIsRefreshingTrackedSummary(false);
+    }
+  };
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
@@ -412,13 +478,41 @@ function MainContent() {
         </Box>
 
         <TabPanel value={tabValue} index={0}>
+          {/* 添加热门项目总结卡片 */}
+          {hotReposData.summary && (
+            <Card sx={{ mb: 3 }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">
+                    热门项目总结
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleRefreshHotRepos}
+                    disabled={refreshHotReposMutation.isPending}
+                    startIcon={refreshHotReposMutation.isPending ? <CircularProgress size={20} /> : null}
+                  >
+                    {refreshHotReposMutation.isPending ? '更新中...' : '更新'}
+                  </Button>
+                </Box>
+                <Typography variant="body1" component="div" sx={{ whiteSpace: 'pre-line' }}>
+                  {hotReposData.summary}
+                </Typography>
+              </CardContent>
+            </Card>
+          )}
+
           <Box sx={{ mb: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
             <Button 
               variant="contained" 
-              onClick={handleRefreshRepos}
-              disabled={loading || isLoadingHotRepos}
+              onClick={handleRefreshHotRepos}
+              disabled={refreshHotReposMutation.isPending || isLoadingHotRepos}
             >
-              {(loading || isLoadingHotRepos) ? <CircularProgress size={24} color="inherit" /> : '刷新热门项目'}
+              {(refreshHotReposMutation.isPending || isLoadingHotRepos) ? 
+                <CircularProgress size={24} color="inherit" /> : 
+                '刷新热门项目'
+              }
             </Button>
             
             {/* 添加搜索框 */}
@@ -459,16 +553,9 @@ function MainContent() {
                     <TableRow key={repo.full_name}>
                       <TableCell component="th" scope="row">
                         <Typography variant="body2" component="div">
-                          <strong>{repo.name}</strong>
+                          <strong>{shouldTranslate ? `${repo.name} (${repo.name_zh})` : repo.name}</strong>
                           <br />
-                          <small>{repo.full_name}</small>
-                        </Typography>
-                      </TableCell>
-                      <TableCell component="th" scope="row">
-                        <Typography variant="body2" component="div">
-                          <strong>{repo.description_zh}</strong>
-                          <br />
-                          <small>{repo.description}</small>
+                          <small>{shouldTranslate ? `${repo.description || ''}\n${repo.description_zh || ''}` : (repo.description || '')}</small>
                         </Typography>
                       </TableCell>
                       <TableCell align="right">{repo.stars}</TableCell>
@@ -510,6 +597,31 @@ function MainContent() {
           <Typography variant="h6" gutterBottom>
             已跟踪项目列表
           </Typography>
+
+          {/* 添加已追踪项目总结卡片 */}
+          {trackedReposSummaryData && (
+            <Card sx={{ mb: 3 }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">
+                    已追踪项目更新总结
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleRefreshTrackedSummary}
+                    disabled={isRefreshingTrackedSummary}
+                    startIcon={isRefreshingTrackedSummary ? <CircularProgress size={20} /> : null}
+                  >
+                    {isRefreshingTrackedSummary ? '更新中...' : '更新总结'}
+                  </Button>
+                </Box>
+                <Typography variant="body1" component="div" sx={{ whiteSpace: 'pre-line' }}>
+                  {trackedReposSummaryData}
+                </Typography>
+              </CardContent>
+            </Card>
+          )}
 
           <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
             {/* 添加项目输入框 */}
@@ -889,12 +1001,12 @@ function MainContent() {
                           <TableCell>{task.email}</TableCell>
                           <TableCell>
                             <Tooltip title={task.repositories.map(repoName => {
-                              const repo = trackedRepos.find(r => r.full_name === repoName);
+                              const repo = trackedRepos.find((r: TrackedRepo) => r.full_name === repoName);
                               return repo ? repo.name : repoName;
                             }).join(', ')}>
                               <Typography noWrap sx={{ maxWidth: '150px' }}>
                                 {task.repositories.map(repoName => {
-                                  const repo = trackedRepos.find(r => r.full_name === repoName);
+                                  const repo = trackedRepos.find((r: TrackedRepo) => r.full_name === repoName);
                                   return repo ? repo.name : repoName;
                                 }).join(', ')}
                               </Typography>

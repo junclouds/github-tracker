@@ -159,3 +159,63 @@ export async function updateScheduledTask(
   }
   return response.json()
 }
+
+export async function getTrackedReposSummary(days: number = 1): Promise<{repos: TrackedRepo[], summary: string}> {
+  const response = await fetch(`${API_BASE_URL}/api/tracked-repos-summary?days=${days}`)
+  if (!response.ok) {
+    throw new Error('Failed to fetch tracked repos summary')
+  }
+  return response.json()
+}
+
+export const refreshTrackedReposSummary = async (days: number = 1): Promise<string> => {
+  const response = await fetch(`${API_BASE_URL}/api/tracked-repos-summary/refresh?days=${days}`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('刷新已追踪项目总结失败');
+  }
+  const data = await response.json();
+  return data.summary;
+};
+
+// 分离获取已追踪项目列表和总结的API
+export async function fetchTrackedReposOnly(): Promise<TrackedRepo[]> {
+  const response = await fetch(`${API_BASE_URL}/api/tracked-repos`)
+  if (!response.ok) {
+    throw new Error('Failed to fetch tracked repos')
+  }
+  return response.json()
+}
+
+export async function fetchTrackedReposSummaryOnly(days: number = 1): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/api/tracked-repos-summary/content?days=${days}`)
+  if (!response.ok) {
+    throw new Error('Failed to fetch tracked repos summary')
+  }
+  const data = await response.json()
+  return data.summary
+}
+
+export interface HotReposResponse {
+  repos: Repo[];
+  summary: string;
+}
+
+export async function getHotRepos(shouldTranslate: boolean = false): Promise<HotReposResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/hot-repos?should_translate=${shouldTranslate}`)
+  if (!response.ok) {
+    throw new Error('Failed to fetch hot repos')
+  }
+  return response.json()
+}
+
+export async function refreshHotRepos(shouldTranslate: boolean = false): Promise<HotReposResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/hot-repos/refresh?should_translate=${shouldTranslate}`, {
+    method: 'POST'
+  })
+  if (!response.ok) {
+    throw new Error('Failed to refresh hot repos')
+  }
+  return response.json()
+}

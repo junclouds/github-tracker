@@ -18,6 +18,10 @@ import uuid
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import zhipuai  # 导入智谱AI SDK
+import asyncio
+from .mail.mail_service import MailService
+from .llm.summary_service import SummaryService
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -43,7 +47,6 @@ app.add_middleware(
 # 获取项目根目录
 base_dir = Path(__file__).parent.parent
 github_token = os.getenv('GITHUB_TOKEN')
-zhipu_api_key = os.getenv('ZHIPU_API_KEY')
 
 if not github_token:
     raise ValueError("请设置 GITHUB_TOKEN 环境变量")
@@ -51,6 +54,10 @@ if not github_token:
 # 初始化追踪器
 github_tracker = GitHubTracker(github_token, base_dir)
 repo_tracker = RepoActivityTracker(github_token, base_dir)
+
+# 初始化服务
+mail_service = MailService()
+summary_service = SummaryService(base_dir / "config" / "model_config.yaml")
 
 class RepoTrackRequest(BaseModel):
     repo_full_name: str
@@ -68,12 +75,20 @@ class ScheduledTask(ScheduledTaskRequest):
     created_at: datetime
 
 @app.get("/api/hot-repos")
-async def get_hot_repos() -> List[Dict[str, Any]]:
-    """获取热门仓库列表"""
+async def get_hot_repos(should_translate: bool = False) -> Dict[str, Any]:
+    """
+    获取热门仓库列表和总结
+    
+    Args:
+        should_translate: 是否翻译仓库名称和描述，默认为False
+    """
     try:
         print("开始获取热门仓库...")  # 添加调试日志
-        repos = github_tracker.get_trending_repositories()
+        repos = github_tracker.get_trending_repositories(should_translate=should_translate)
         print(f"获取到 {len(repos)} 个仓库")  # 添加调试日志
+        
+        # 生成总结
+        summary = await summary_service.generate_hot_repos_summary(repos)
         
         # 转换数据格式以匹配前端需求
         formatted_repos = []
@@ -82,14 +97,19 @@ async def get_hot_repos() -> List[Dict[str, Any]]:
                 "name": repo["name"].split("/")[-1],  # 从 full_name 中提取仓库名
                 "full_name": repo["name"],
                 "description": repo["description"],
-                "description_zh": repo["description_zh"],
+                "description_zh": repo.get("description_zh", ""),
+                "name_zh": repo.get("name_zh", ""),
                 "stars": repo["stars"],
                 "forks": repo["forks"],
                 "updated_at": repo["updated_at"].isoformat(),
                 "url": repo["url"]
             })
         print(f"返回格式化后的仓库数据: {formatted_repos}")  # 添加调试日志
-        return formatted_repos
+        
+        return {
+            "repos": formatted_repos,
+            "summary": summary
+        }
     except Exception as e:
         print(f"获取热门仓库时出错: {str(e)}")  # 添加错误日志
         raise HTTPException(status_code=500, detail=str(e))
@@ -583,7 +603,7 @@ async def execute_task(task: Dict[str, Any]):
             try:
                 logging.info(f"正在获取仓库 {repo_full_name} 的活动信息...")
                 # 获取仓库活动
-                activities = repo_tracker.get_repo_activities(repo_full_name, days=7)  # 获取最近7天活动
+                activities = repo_tracker.get_repo_activities(repo_full_name, days=7)
                 if activities and 'activities' in activities:
                     repo_activities = activities['activities']
                     
@@ -592,12 +612,6 @@ async def execute_task(task: Dict[str, Any]):
                     has_issues = bool(repo_activities.get('issues'))
                     has_prs = bool(repo_activities.get('pull_requests'))
                     has_releases = bool(repo_activities.get('releases'))
-                    
-                    logging.info(f"仓库 {repo_full_name} 活动统计:")
-                    logging.info(f"- 提交: {len(repo_activities.get('commits', []))} 个")
-                    logging.info(f"- 议题: {len(repo_activities.get('issues', []))} 个")
-                    logging.info(f"- PR: {len(repo_activities.get('pull_requests', []))} 个")
-                    logging.info(f"- 发布: {len(repo_activities.get('releases', []))} 个")
                     
                     if has_commits or has_issues or has_prs or has_releases:
                         logging.info(f"仓库 {repo_full_name} 有更新，获取详细信息...")
@@ -620,7 +634,7 @@ async def execute_task(task: Dict[str, Any]):
         # 如果有更新，发送邮件
         if updates:
             logging.info(f"共有 {len(updates)} 个仓库有更新，准备发送邮件...")
-            send_email(email, updates)
+            mail_service.send_repo_updates(email, updates)
             logging.info(f"已向 {email} 发送仓库更新邮件")
         else:
             logging.info(f"没有仓库更新，不发送邮件")
@@ -693,7 +707,7 @@ async def send_repo_update_email(task: Dict[str, Any]):
         for repo_full_name in repositories:
             try:
                 # 获取仓库活动
-                activities = repo_tracker.get_repo_activities(repo_full_name, days=7)  # 获取最近7天活动
+                activities = repo_tracker.get_repo_activities(repo_full_name, days=7)
                 if activities and 'activities' in activities:
                     repo_activities = activities['activities']
                     
@@ -712,131 +726,12 @@ async def send_repo_update_email(task: Dict[str, Any]):
                 
         # 如果有更新，发送邮件
         if updates:
-            send_email(email, updates)
+            mail_service.send_repo_updates(email, updates)
             logging.info(f"已向 {email} 发送仓库更新邮件")
         else:
             logging.info(f"仓库没有更新，不发送邮件")
     except Exception as e:
         logging.error(f"发送仓库更新邮件时出错: {str(e)}")
-
-def send_email(to_email: str, updates: List[Dict[str, Any]]):
-    """发送邮件"""
-    try:
-        # 从环境变量获取邮件配置
-        smtp_server = os.getenv('SMTP_SERVER')
-        smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        smtp_username = os.getenv('SMTP_USERNAME')
-        smtp_password = os.getenv('SMTP_PASSWORD')
-        
-        logging.info("邮件服务器配置信息:")
-        logging.info(f"- SMTP服务器: {smtp_server}")
-        logging.info(f"- SMTP端口: {smtp_port}")
-        logging.info(f"- SMTP用户名: {smtp_username}")
-        logging.info(f"- 密码是否已设置: {'是' if smtp_password else '否'}")
-        
-        if not all([smtp_server, smtp_username, smtp_password]):
-            logging.error("邮件服务器配置不完整:")
-            if not smtp_server: logging.error("- 缺少 SMTP_SERVER 配置")
-            if not smtp_username: logging.error("- 缺少 SMTP_USERNAME 配置")
-            if not smtp_password: logging.error("- 缺少 SMTP_PASSWORD 配置")
-            return
-            
-        # 创建邮件
-        msg = MIMEMultipart()
-        msg['From'] = smtp_username
-        msg['To'] = to_email
-        msg['Subject'] = 'GitHub 项目更新通知'
-        
-        logging.info("开始构建邮件内容...")
-        
-        # 构建邮件内容
-        email_body = "<html><body>"
-        email_body += "<h2>GitHub 项目更新通知</h2>"
-        email_body += f"<p>以下是您关注的项目在最近一周的更新动态：</p>"
-        
-        for update in updates:
-            repo = update['repo']
-            activities = update['activities']
-            
-            logging.info(f"添加仓库 {repo['full_name']} 的更新信息到邮件内容")
-            
-            email_body += f"<h3>{repo['name']} ({repo['full_name']})</h3>"
-            email_body += f"<p>Stars: {repo['stars']}, Forks: {repo['forks']}</p>"
-            
-            # 提交信息
-            if activities.get('commits'):
-                email_body += "<h4>最新提交</h4><ul>"
-                for commit in activities['commits'][:5]:  # 最多显示5个提交
-                    message = commit['message'].split('\n')[0]
-                    email_body += f"<li>{message} (作者: {commit['author']})</li>"
-                if len(activities['commits']) > 5:
-                    email_body += f"<li>... 还有 {len(activities['commits']) - 5} 个提交</li>"
-                email_body += "</ul>"
-                
-            # Issue信息
-            if activities.get('issues'):
-                email_body += "<h4>最新议题</h4><ul>"
-                for issue in activities['issues'][:5]:  # 最多显示5个issue
-                    email_body += f"<li>{issue['title']} (状态: {issue['state']})</li>"
-                if len(activities['issues']) > 5:
-                    email_body += f"<li>... 还有 {len(activities['issues']) - 5} 个议题</li>"
-                email_body += "</ul>"
-                
-            # PR信息
-            if activities.get('pull_requests'):
-                email_body += "<h4>最新拉取请求</h4><ul>"
-                for pr in activities['pull_requests'][:5]:  # 最多显示5个PR
-                    email_body += f"<li>{pr['title']} (状态: {pr['state']})</li>"
-                if len(activities['pull_requests']) > 5:
-                    email_body += f"<li>... 还有 {len(activities['pull_requests']) - 5} 个拉取请求</li>"
-                email_body += "</ul>"
-                
-            # 发布信息
-            if activities.get('releases'):
-                email_body += "<h4>最新发布</h4><ul>"
-                for release in activities['releases'][:5]:  # 最多显示5个release
-                    email_body += f"<li>{release['name']} (标签: {release['tag']})</li>"
-                if len(activities['releases']) > 5:
-                    email_body += f"<li>... 还有 {len(activities['releases']) - 5} 个发布</li>"
-                email_body += "</ul>"
-                
-            # 添加仓库链接
-            email_body += f"<p><a href=\"{repo['url']}\">访问仓库</a></p>"
-            email_body += "<hr/>"
-        
-        email_body += "<p>此邮件由 GitHub 项目追踪器自动发送，请勿直接回复。</p>"
-        email_body += "</body></html>"
-        
-        # 添加HTML内容
-        msg.attach(MIMEText(email_body, 'html'))
-        
-        logging.info("邮件内容构建完成，准备发送...")
-        
-        # 发送邮件
-        try:
-            logging.info(f"连接到SMTP服务器 {smtp_server}:{smtp_port}...")
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            logging.info("启用TLS加密...")
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            logging.info("尝试登录SMTP服务器...")
-            server.login(smtp_username, smtp_password)
-            logging.info("登录成功，发送邮件...")
-            server.send_message(msg)
-            logging.info("邮件发送完成，关闭SMTP连接...")
-            server.quit()
-            logging.info(f"成功发送邮件到 {to_email}")
-        except Exception as e:
-            logging.error(f"发送邮件时出错: {str(e)}")
-            logging.error(f"错误类型: {type(e).__name__}")
-            logging.error(f"错误详情: {str(e)}")
-            raise
-    except Exception as e:
-        logging.error(f"准备发送邮件时出错: {str(e)}")
-        logging.error(f"错误类型: {type(e).__name__}")
-        logging.error(f"错误详情: {str(e)}")
-        raise
 
 # 启动时加载已有的定时任务
 def load_scheduled_tasks():
@@ -863,7 +758,57 @@ def scheduled_refresh():
     print("执行定时任务: 自动获取仓库动态")
     repo_tracker.track_all_repos()
 
-# 在应用启动时加载定时任务
+@app.get("/api/tracked-repos-summary")
+async def get_tracked_repos_summary(days: int = 1) -> Dict[str, Any]:
+    """获取已追踪的仓库列表及其总结"""
+    try:
+        # 获取已追踪的仓库
+        tracked_repos = await get_tracked_repos(days)
+        
+        # 生成总结
+        summary = await summary_service.generate_tracked_repos_summary(tracked_repos)
+        
+        return {
+            "repos": tracked_repos,
+            "summary": summary
+        }
+    except Exception as e:
+        logging.error(f"获取已追踪项目总结时出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 修改每日总结任务
+async def scheduled_daily_summary():
+    """每天早上10点执行的定时任务"""
+    logging.info("开始执行每日项目总结任务...")
+    
+    try:
+        # 获取热门项目总结
+        hot_repos_response = await get_hot_repos(False)
+        hot_repos_summary = hot_repos_response["summary"]
+        
+        # 获取已追踪项目总结
+        tracked_repos_response = await get_tracked_repos_summary(days=1)
+        tracked_repos_summary = tracked_repos_response["summary"]
+        
+        # 从配置文件获取邮件接收者列表
+        config_file = base_dir / "config" / "scheduled_tasks.json"
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                tasks = config.get('tasks', [])
+                
+                # 获取所有配置了邮箱的用户
+                email_list = set(task['email'] for task in tasks if task.get('email'))
+                
+                # 发送邮件给每个用户
+                for email in email_list:
+                    mail_service.send_daily_summary(email, hot_repos_summary, tracked_repos_summary)
+                    logging.info(f"成功发送每日总结邮件到 {email}")
+        
+    except Exception as e:
+        logging.error(f"执行每日项目总结任务时出错: {str(e)}")
+
+# 在应用启动时添加每日总结任务
 @app.on_event("startup")
 def startup_event():
     # 加载已配置的定时任务
@@ -877,6 +822,14 @@ def startup_event():
         replace_existing=True
     )
     
+    # 添加每天的项目总结任务
+    scheduler.add_job(
+        lambda: asyncio.create_task(scheduled_daily_summary()),  # 使用asyncio.create_task包装异步函数
+        CronTrigger(hour=10, minute=0),  # 每天早上10点执行
+        id='daily_summary',
+        replace_existing=True
+    )
+    
     # 启动定时任务调度器
     scheduler.start()
 
@@ -884,6 +837,54 @@ def startup_event():
 @app.on_event("shutdown")
 def shutdown_scheduler():
     scheduler.shutdown()
+
+@app.post("/api/hot-repos/refresh")
+async def refresh_hot_repos(should_translate: bool = False) -> Dict[str, Any]:
+    """刷新热门项目列表和总结"""
+    try:
+        # 获取热门仓库
+        repos = github_tracker.get_trending_repositories(should_translate=should_translate)
+        
+        # 生成总结
+        summary = await summary_service.generate_hot_repos_summary(repos)
+        
+        # 转换数据格式
+        formatted_repos = []
+        for repo in repos:
+            formatted_repos.append({
+                "name": repo["name"].split("/")[-1],
+                "full_name": repo["name"],
+                "description": repo["description"],
+                "description_zh": repo.get("description_zh", ""),
+                "name_zh": repo.get("name_zh", ""),
+                "stars": repo["stars"],
+                "forks": repo["forks"],
+                "updated_at": repo["updated_at"].isoformat(),
+                "url": repo["url"]
+            })
+            
+        return {
+            "repos": formatted_repos,
+            "summary": summary
+        }
+    except Exception as e:
+        logging.error(f"刷新热门项目时出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tracked-repos-summary/content")
+async def get_tracked_repos_summary_content(days: int = 1) -> Dict[str, str]:
+    """获取已追踪项目总结内容"""
+    try:
+        # 获取已追踪的仓库
+        tracked_repos = await get_tracked_repos(days)
+        
+        # 生成总结
+        summary = await summary_service.generate_tracked_repos_summary(tracked_repos)
+        
+        return {"summary": summary}
+    except Exception as e:
+        logging.error(f"获取已追踪项目总结内容时出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

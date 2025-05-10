@@ -3,6 +3,7 @@ from typing import Dict, Any
 from pathlib import Path
 from .base_llm import BaseLLM
 import os
+import logging
 
 class ZhipuLLM(BaseLLM):
     """智谱AI客户端"""
@@ -17,10 +18,11 @@ class ZhipuLLM(BaseLLM):
         super().__init__(config_path)
         self.zhipuai_api_key = os.getenv('ZHIPU_API_KEY')
         self.model = self.model_config['zhipu'].get('model', 'chatglm_turbo')
+        self.logger = logging.getLogger(__name__)
         
-    def _call_model(self, prompt: str) -> str:
+    async def _call_model(self, prompt: str) -> str:
         """
-        调用智谱AI API
+        异步调用智谱AI API
         
         Args:
             prompt: 提示词
@@ -28,38 +30,39 @@ class ZhipuLLM(BaseLLM):
         Returns:
             str: 模型返回的文本
         """
-        # 创建客户端实例
-        client = ZhipuAI(api_key=self.zhipuai_api_key)
-        
-        # 构建消息列表
-        messages = [
-            {
-                "role": "system",
-                "content": "你是一个乐于解答各种问题的助手，你的任务是为用户提供专业、准确、有见地的建议。"
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-        
-        # 调用智谱AI的chat API
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            top_p=0.7,
-            temperature=0.95,
-            max_tokens=1024,
-            # tools=[{"type": "web_search", "web_search": {"search_result": True, "search_engine": "search-std"}}],
-            stream=False
-        )
-        
-        # 处理响应
-        result = response.choices[0].message.content
-        # for trunk in response:
-        #     result += trunk['content']  # 假设返回的内容在 'content' 字段中
-        
-        return result
+        try:
+            # 创建客户端实例
+            client = ZhipuAI(api_key=self.zhipuai_api_key)
+            
+            # 构建消息列表
+            messages = [
+                {
+                    "role": "system",
+                    "content": "你是一个乐于解答各种问题的助手，你的任务是为用户提供专业、准确、有见地的建议。"
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+            
+            # 调用智谱AI的chat API
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                top_p=0.7,
+                temperature=0.95,
+                max_tokens=1024,
+                # tools=[{"type": "web_search", "web_search": {"search_result": True, "search_engine": "search-std"}}],
+                stream=False
+            )
+            
+            # 处理响应
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            self.logger.error(f"调用智谱AI模型时出错: {str(e)}")
+            raise
             
     def translate(self, text: str, from_lang: str = "en", to_lang: str = "zh") -> str:
         """
